@@ -9,7 +9,7 @@ Hacked together by / Copyright 2020 Ross Wightman
 
 from torch import nn as nn
 
-from .helpers import to_2tuple
+from helpers import to_2tuple
 
 
 class PatchEmbed(nn.Module):
@@ -34,6 +34,14 @@ class PatchEmbed(nn.Module):
             f"Input image size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."
         x = self.proj(x)
         if self.flatten:
+            # flatten(2)表示从第2个维度开始，到最后一维，合成一维
             x = x.flatten(2).transpose(1, 2)  # BCHW -> BNC
         x = self.norm(x)
         return x
+
+if __name__ == '__main__':
+    import torch
+    a = PatchEmbed()
+    input = torch.randn(1,3,224,224)
+    output = a(input)
+    print(output)

@@ -54,7 +54,7 @@ def _cfg(url='', **kwargs):
 default_cfgs = {
     # patch models (weights from official Google JAX impl)
     'vit_tiny_patch16_224': _cfg(
-        url='https://storage.googleapis.com/vit_models/augreg/'
+        url='https://storage.googleapis.com/vit_models/augreg/' 
             'Ti_16-i21k-300ep-lr_0.001-aug_none-wd_0.03-do_0.0-sd_0.0--imagenet2012-steps_20k-lr_0.03-res_224.npz'),
     'vit_tiny_patch16_384': _cfg(
         url='https://storage.googleapis.com/vit_models/augreg/'
@@ -183,7 +183,7 @@ class Attention(nn.Module):
 
     def forward(self, x):
         B, N, C = x.shape
-        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)  # 3, B, head, N, C//head
         q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)
 
         attn = (q @ k.transpose(-2, -1)) * self.scale
@@ -210,7 +210,7 @@ class Block(nn.Module):
         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
 
     def forward(self, x):
-        x = x + self.drop_path(self.attn(self.norm1(x)))
+        x = x + self.drop_path(self.attn(self.norm1(x)))  # 残差
         x = x + self.drop_path(self.mlp(self.norm2(x)))
         return x
 
@@ -222,7 +222,7 @@ class VisionTransformer(nn.Module):
         - https://arxiv.org/abs/2010.11929
 
     Includes distillation token & head support for `DeiT: Data-efficient Image Transformers`
-        - https://arxiv.org/abs/2012.12877
+        - https://arxiv.org/abs/2012.12877  
     """
 
     def __init__(self, img_size=224, patch_size=16, in_chans=3, num_classes=1000, embed_dim=768, depth=12,
@@ -236,11 +236,11 @@ class VisionTransformer(nn.Module):
             in_chans (int): number of input channels
             num_classes (int): number of classes for classification head
             embed_dim (int): embedding dimension
-            depth (int): depth of transformer
-            num_heads (int): number of attention heads
+            depth (int): depth of transformer  Transformer的Block的数量
+            num_heads (int): number of attention heads  attention heads的数量
             mlp_ratio (int): ratio of mlp hidden dim to embedding dim
-            qkv_bias (bool): enable bias for qkv if True
-            representation_size (Optional[int]): enable and set representation layer (pre-logits) to this value if set
+            qkv_bias (bool): enable bias for qkv if True  默认是True
+            representation_size (Optional[int]): enable and set representation layer (pre-logits) to this value if set  
             distilled (bool): model includes a distillation token and head as in DeiT models
             drop_rate (float): dropout rate
             attn_drop_rate (float): attention dropout rate
@@ -258,10 +258,10 @@ class VisionTransformer(nn.Module):
 
         self.patch_embed = embed_layer(
             img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim)
-        num_patches = self.patch_embed.num_patches
+        num_patches = self.patch_embed.num_patches  # grid_size[0] * grid_size[1]
 
-        self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
-        self.dist_token = nn.Parameter(torch.zeros(1, 1, embed_dim)) if distilled else None
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))  # 1,1,C
+        self.dist_token = nn.Parameter(torch.zeros(1, 1, embed_dim)) if distilled else None  # 1,1,C
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + self.num_tokens, embed_dim))
         self.pos_drop = nn.Dropout(p=drop_rate)
 
@@ -273,7 +273,7 @@ class VisionTransformer(nn.Module):
             for i in range(depth)])
         self.norm = norm_layer(embed_dim)
 
-        # Representation layer
+        # Representation layer  输出 -> 表示层 -> 分类头
         if representation_size and not distilled:
             self.num_features = representation_size
             self.pre_logits = nn.Sequential(OrderedDict([
@@ -329,12 +329,13 @@ class VisionTransformer(nn.Module):
             self.head_dist = nn.Linear(self.embed_dim, self.num_classes) if num_classes > 0 else nn.Identity()
 
     def forward_features(self, x):
-        x = self.patch_embed(x)
+        x = self.patch_embed(x)  # BNC
+        # -1不改变维度，expand只能在第一个维度增加一维   (B, 1, C)
         cls_token = self.cls_token.expand(x.shape[0], -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
-        if self.dist_token is None:
-            x = torch.cat((cls_token, x), dim=1)
+        if self.dist_token is None:  # (1, 1, C)
+            x = torch.cat((cls_token, x), dim=1)  # (B, 1+N, C)
         else:
-            x = torch.cat((cls_token, self.dist_token.expand(x.shape[0], -1, -1), x), dim=1)
+            x = torch.cat((cls_token, self.dist_token.expand(x.shape[0], -1, -1), x), dim=1)  # (B, 1+1+N, C)
         x = self.pos_drop(x + self.pos_embed)
         x = self.blocks(x)
         x = self.norm(x)
@@ -353,7 +354,7 @@ class VisionTransformer(nn.Module):
             else:
                 return (x + x_dist) / 2
         else:
-            x = self.head(x)
+            x = self.head(x)  # B,N,class
         return x
 
 
