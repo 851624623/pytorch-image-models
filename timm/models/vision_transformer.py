@@ -22,6 +22,8 @@ for some einops/einsum fun
 
 Hacked together by / Copyright 2021 Ross Wightman
 """
+
+# https://zhuanlan.zhihu.com/p/350837279这个网址用来解读的
 import math
 import logging
 from functools import partial
@@ -298,6 +300,11 @@ class VisionTransformer(nn.Module):
         if self.dist_token is not None:
             trunc_normal_(self.dist_token, std=.02)
         if mode.startswith('jax'):
+            '''
+            max2 = partial(max, 10)
+            max2(5, 6, 7)
+            相当于max(10, 5, 6, 7)
+            '''
             # leave cls token as zeros to match jax impl
             named_apply(partial(_init_vit_weights, head_bias=head_bias, jax_impl=True), self)
         else:
@@ -330,6 +337,11 @@ class VisionTransformer(nn.Module):
 
     def forward_features(self, x):
         x = self.patch_embed(x)  # BNC
+        '''
+            即使cls_token和dist_token为0也没关系，后面有layernorm，可解决线性层输入为0，那么对应权重永远为0的问题
+            卷积因为共享权重，即使有些输入为0，也不会影响权重更新
+            不管batch的数据如何改变，ViT的cls_token和dist_token始终为0，所以layernorm很重要
+        '''
         # -1不改变维度，expand只能在第一个维度增加一维   (B, 1, C)
         cls_token = self.cls_token.expand(x.shape[0], -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
         if self.dist_token is None:  # (1, 1, C)
@@ -538,7 +550,32 @@ def _create_vision_transformer(variant, pretrained=False, default_cfg=None, **kw
         **kwargs)
     return model
 
+'''
+    定义和注册vision transformer模型：
+    @register_model这个函数来自timm库model文件夹下的registry.py文件，它的作用是：
+    @指装饰器
+    @register_model代表注册器，注册这个新定义的模型。
+    存储到_model_entrypoints这个字典中，比如：
+    _model_entrypoints[vit_base_patch16_224] = _create_vision_transformer('vit_base_patch16_224', pretrained=pretrained, **model_kwargs)
+    然后在factory.py的create_model函数中的下面这几行真正创建模型，你以后想创建的任何模型都会使用create_model这个函数，这里说清楚了为什么要用它：
+    if is_model(model_name):
+        create_fn = model_entrypoint(model_name)
+    else:
+        raise RuntimeError('Unknown model (%s)' % model_name)
 
+    with set_layer_config(scriptable=scriptable, exportable=exportable, no_jit=no_jit):
+        model = create_fn(pretrained=pretrained, **kwargs)
+    
+    比如刚才在main.py里面用了create_model创建模型，如下面代码所示。而create_model就来自factory.py：
+    model = create_model(
+        args.model,
+        pretrained=False,
+        num_classes=args.nb_classes,
+        drop_rate=args.drop,
+        drop_path_rate=args.drop_path,
+        drop_block_rate=None,
+    )
+'''
 @register_model
 def vit_tiny_patch16_224(pretrained=False, **kwargs):
     """ ViT-Tiny (Vit-Ti/16)
